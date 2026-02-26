@@ -12,7 +12,7 @@ export default function UploadPDF() {
     const caseTitle = localStorage.getItem("caseTitle");
     const casePdfUrl = localStorage.getItem("casePdfUrl");
 
-    const upload = async () => {
+    const extractCaseText = async () => {
         setError("");
         setLoading(true);
 
@@ -51,9 +51,9 @@ export default function UploadPDF() {
 
     return (
       <AppShell
-        title="Upload Judgment PDF"
-        subtitle="Upload your downloaded case judgment and extract the text for AI summarization."
-        actions={casePdfUrl ? <button className="btn btn-secondary" onClick={openRemotePdf}>Open source PDF</button> : null}
+        title="Case PDF Intake"
+        subtitle="Use selected case PDF, or upload your own file, to extract complete text for AI summary and audio generation."
+        actions={casePdfUrl ? <button className="btn btn-secondary" onClick={openRemotePdf}>Open selected source PDF</button> : null}
       >
         {caseTitle ? <p className="status info"><b>Selected case:</b> {caseTitle}</p> : null}
         {error ? <p className="status warn">{error}</p> : null}
@@ -64,7 +64,7 @@ export default function UploadPDF() {
         </div>
 
         <div className="actions-end">
-          <button className="btn btn-primary" onClick={upload} disabled={loading}>
+          <button className="btn btn-primary" onClick={extractCaseText} disabled={loading}>
             {loading ? "Extracting..." : "Extract Text"}
           </button>
         </div>

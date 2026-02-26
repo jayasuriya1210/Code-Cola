@@ -14,14 +14,14 @@ const Case = {
     });
   },
 
-  saveUpload: ({ case_id, user_id, file_path, extracted_text }) => {
+  saveUpload: ({ case_id, user_id, file_path, extracted_text, pdf_blob, pdf_mime, pdf_name }) => {
     return new Promise((resolve, reject) => {
       if (case_id) {
         db.run(
           `UPDATE cases
-           SET file_path = ?, extracted_text = ?, uploaded_at = datetime('now')
+           SET file_path = ?, pdf_blob = ?, pdf_mime = ?, pdf_name = ?, extracted_text = ?, uploaded_at = datetime('now')
            WHERE id = ? AND user_id = ?`,
-          [file_path, extracted_text, case_id, user_id],
+          [file_path, pdf_blob || null, pdf_mime || "application/pdf", pdf_name || null, extracted_text, case_id, user_id],
           function (err) {
             err ? reject(err) : resolve(case_id);
           }
@@ -30,9 +30,9 @@ const Case = {
       }
 
       db.run(
-        `INSERT INTO cases (user_id, file_path, extracted_text, uploaded_at)
-         VALUES (?, ?, ?, datetime('now'))`,
-        [user_id, file_path, extracted_text],
+        `INSERT INTO cases (user_id, file_path, pdf_blob, pdf_mime, pdf_name, extracted_text, uploaded_at)
+         VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+        [user_id, file_path, pdf_blob || null, pdf_mime || "application/pdf", pdf_name || null, extracted_text],
         function (err) {
           err ? reject(err) : resolve(this.lastID);
         }
@@ -43,7 +43,19 @@ const Case = {
   findById: (id, user_id) => {
     return new Promise((resolve, reject) => {
       db.get(
-        "SELECT * FROM cases WHERE id = ? AND user_id = ?",
+        `SELECT id, user_id, title, source_url, pdf_url, file_path, extracted_text, uploaded_at
+         FROM cases WHERE id = ? AND user_id = ?`,
+        [id, user_id],
+        (err, row) => (err ? reject(err) : resolve(row))
+      );
+    });
+  },
+
+  getPdfByCaseId: (id, user_id) => {
+    return new Promise((resolve, reject) => {
+      db.get(
+        `SELECT id, title, file_path, pdf_blob, pdf_mime, pdf_name
+         FROM cases WHERE id = ? AND user_id = ?`,
         [id, user_id],
         (err, row) => (err ? reject(err) : resolve(row))
       );

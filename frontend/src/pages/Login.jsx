@@ -25,27 +25,30 @@ export default function Login() {
     return (
       <div className="auth-wrap">
         <div className="auth-card">
-          <h2 className="auth-title">Welcome back</h2>
-          <p className="auth-subtitle">Sign in to access case search, summary, audio and notes.</p>
+          <div className="auth-panel">
+            <h2 className="auth-title">Welcome back</h2>
+            <p className="auth-subtitle">Sign in to access case search, summary, audio and notes.</p>
 
-          <div className="field">
-            <label className="label">Email</label>
-            <input className="input" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} />
-          </div>
+            <div className="field">
+              <label className="label">Email</label>
+              <input className="input" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} />
+            </div>
 
-          <div className="field">
-            <label className="label">Password</label>
-            <input className="input" placeholder="Enter password" type="password" value={password} onChange={e => setPassword(e.target.value)} />
-          </div>
+            <div className="field">
+              <label className="label">Password</label>
+              <input className="input" placeholder="Enter password" type="password" value={password} onChange={e => setPassword(e.target.value)} />
+            </div>
 
-          <div className="row">
-            <button className="btn btn-primary" onClick={login} disabled={loading}>
-              {loading ? "Logging in..." : "Login"}
-            </button>
-            <button className="btn btn-secondary" onClick={() => nav("/register")}>
-              Create account
-            </button>
+            <div className="row">
+              <button className="btn btn-primary" onClick={login} disabled={loading}>
+                {loading ? "Logging in..." : "Login"}
+              </button>
+              <button className="btn btn-secondary" onClick={() => nav("/register")}>
+                Create account
+              </button>
+            </div>
           </div>
+          <div className="auth-visual" aria-hidden="true" />
         </div>
       </div>
     );

@@ -87,6 +87,9 @@ function ensureSchema() {
         source_url TEXT,
         pdf_url TEXT,
         file_path TEXT,
+        pdf_blob BLOB,
+        pdf_mime TEXT,
+        pdf_name TEXT,
         extracted_text TEXT,
         uploaded_at TEXT DEFAULT (datetime('now'))
       )
@@ -115,6 +118,7 @@ function ensureSchema() {
         summary_id INTEGER,
         language TEXT DEFAULT 'en',
         audio_url TEXT NOT NULL,
+        audio_urls_json TEXT,
         created_at TEXT DEFAULT (datetime('now'))
       )
     `);
@@ -146,6 +150,9 @@ function ensureSchema() {
       { name: "source_url", definition: "TEXT" },
       { name: "pdf_url", definition: "TEXT" },
       { name: "file_path", definition: "TEXT" },
+      { name: "pdf_blob", definition: "BLOB" },
+      { name: "pdf_mime", definition: "TEXT" },
+      { name: "pdf_name", definition: "TEXT" },
       { name: "extracted_text", definition: "TEXT" },
       { name: "uploaded_at", definition: "TEXT" },
     ]);
@@ -161,6 +168,10 @@ function ensureSchema() {
       { name: "note_text", definition: "TEXT" },
       { name: "notes_path", definition: "TEXT" },
       { name: "created_at", definition: "TEXT" },
+    ]);
+
+    ensureColumns("audio_records", [
+      { name: "audio_urls_json", definition: "TEXT" },
     ]);
   });
 }

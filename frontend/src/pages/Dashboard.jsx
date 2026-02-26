@@ -7,25 +7,25 @@ export default function Dashboard() {
 
     return (
       <AppShell
-        title="Dashboard"
-        subtitle={user?.name ? `Welcome, ${user.name}` : "Welcome to your legal intelligence workspace"}
+        title="Workflow Dashboard"
+        subtitle={user?.name ? `Welcome, ${user.name}` : "Case search, PDF intelligence, audio, and notes in one workflow"}
       >
         <div className="tile-grid">
           <div className="tile">
-            <h3>AI Case Search</h3>
-            <p>Search legal judgments from web sources using optimized legal terms.</p>
+            <h3>1. Search Case Files</h3>
+            <p>Search related cases, open/download source files, and pick a case for processing.</p>
             <button className="btn btn-primary" onClick={() => nav("/search")}>Search cases</button>
           </div>
 
           <div className="tile">
-            <h3>Upload and Extract</h3>
-            <p>Upload downloaded judgment PDFs and extract case text for analysis.</p>
+            <h3>2. Extract + Summarize</h3>
+            <p>Upload or use source PDF, extract full content, and generate AI summary + audio.</p>
             <button className="btn btn-primary" onClick={() => nav("/upload")}>Upload PDF</button>
           </div>
 
           <div className="tile">
-            <h3>History and Exports</h3>
-            <p>View past summaries, audio sessions, and exported notes PDFs.</p>
+            <h3>3. Audio + History</h3>
+            <p>Take listening notes, export PDF notes, and reopen or delete old case records.</p>
             <button className="btn btn-primary" onClick={() => nav("/history")}>Open history</button>
           </div>
         </div>

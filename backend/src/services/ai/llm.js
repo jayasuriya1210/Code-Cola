@@ -1,9 +1,10 @@
 async function callLLM({ system, user, responseFormat = "text", maxTokens = 500 }) {
-  const apiKey = process.env.OPENAI_API_KEY || process.env.GROQ_API_KEY;
-  if (!apiKey) return null;
-
   const baseUrl = process.env.OPENAI_BASE_URL || (process.env.GROQ_API_KEY ? "https://api.groq.com/openai/v1" : "https://api.openai.com/v1");
   const model = process.env.OPENAI_MODEL || (process.env.GROQ_API_KEY ? "llama-3.1-8b-instant" : "gpt-4o-mini");
+  const apiKey = process.env.OPENAI_API_KEY || process.env.GROQ_API_KEY || "";
+  const isLocalOllama = /localhost:11434|127\.0\.0\.1:11434/.test(baseUrl);
+
+  if (!apiKey && !isLocalOllama) return null;
 
   const body = {
     model,
@@ -18,14 +19,33 @@ async function callLLM({ system, user, responseFormat = "text", maxTokens = 500 
     body.response_format = { type: "json_object" };
   }
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  const headers = {
+    "Content-Type": "application/json",
+  };
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+
+  const timeoutMs = Number(process.env.LLM_TIMEOUT_MS || 8000);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let response;
+  try {
+    response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`LLM request timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!response.ok) {
     const errorText = await response.text();

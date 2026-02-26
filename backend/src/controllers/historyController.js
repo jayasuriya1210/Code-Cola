@@ -22,3 +22,36 @@ exports.getHistory = async (req, res) => {
     return res.status(500).json({ msg: "Failed to load history" });
   }
 };
+
+exports.deleteCaseAudio = async (req, res) => {
+  try {
+    const caseId = Number(req.params.caseId);
+    if (!caseId) return res.status(400).json({ msg: "Valid caseId is required" });
+
+    await History.deleteAudioByCase(req.user.id, caseId);
+    return res.json({ msg: "Audio deleted" });
+  } catch (error) {
+    return res.status(500).json({ msg: "Failed to delete audio" });
+  }
+};
+
+exports.deleteCaseRecord = async (req, res) => {
+  try {
+    const caseId = Number(req.params.caseId);
+    if (!caseId) return res.status(400).json({ msg: "Valid caseId is required" });
+
+    await History.deleteCaseWithArtifacts(req.user.id, caseId);
+    return res.json({ msg: "Case history deleted" });
+  } catch (error) {
+    return res.status(500).json({ msg: "Failed to delete case history" });
+  }
+};
+
+exports.clearAllHistory = async (req, res) => {
+  try {
+    await History.clearAllWithArtifacts(req.user.id);
+    return res.json({ msg: "All history deleted" });
+  } catch (error) {
+    return res.status(500).json({ msg: "Failed to clear history" });
+  }
+};

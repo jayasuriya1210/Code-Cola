@@ -26,7 +26,15 @@ export default function NotesPage() {
     };
 
     return (
-      <AppShell title="Notes and Export" subtitle="Write observations while listening and export notes as PDF.">
+      <AppShell title="Notes and Export" subtitle="Use the Audio + Notes workspace for synchronized listening and note taking.">
+        <p className="status info">
+          This page remains available, but the recommended workflow is now <b>Audio + Notes Workspace</b>.
+        </p>
+        <div className="actions-end">
+          <button className="btn btn-primary" onClick={() => nav("/audio")}>Go to Audio + Notes</button>
+        </div>
+
+        <hr className="divider" />
         <div className="field">
           <label className="label">Audio player</label>
           <audio controls src={audio} style={{ width: "100%" }} />

@@ -18,6 +18,9 @@ db.serialize(() => {
       source_url TEXT,
       pdf_url TEXT,
       file_path TEXT,
+      pdf_blob BLOB,
+      pdf_mime TEXT,
+      pdf_name TEXT,
       extracted_text TEXT,
       uploaded_at TEXT DEFAULT (datetime('now'))
     )
@@ -46,6 +49,7 @@ db.serialize(() => {
       summary_id INTEGER,
       language TEXT DEFAULT 'en',
       audio_url TEXT NOT NULL,
+      audio_urls_json TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     )
   `);

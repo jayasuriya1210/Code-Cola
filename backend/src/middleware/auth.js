@@ -1,7 +1,7 @@
 const jwt = require("jsonwebtoken");
 
 module.exports = (req, res, next) => {
-  const rawAuth = req.headers["authorization"];
+  const rawAuth = req.headers["authorization"] || req.headers["x-access-token"] || req.query?.token;
   if (!rawAuth) return res.status(401).json({ msg: "No token" });
   const token = rawAuth.startsWith("Bearer ") ? rawAuth.slice(7) : rawAuth;
 

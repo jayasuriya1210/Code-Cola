@@ -4,6 +4,7 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
+const { getTTSHealth } = require("./src/services/tts/tts");
 
 // Initialize express
 const app = express();
@@ -39,6 +40,7 @@ app.use("/api/history", require("./src/routes/historyRoutes"));
 app.use("/api/summary", require("./src/routes/summaryRoutes"));
 app.use("/api/notes", require("./src/routes/notesRoutes"));
 app.use("/api/cases", require("./src/routes/caseRoutes"));
+app.use("/api/workflow", require("./src/routes/workflowRoutes"));
 
 // Default route
 app.get("/", (req, res) => {
@@ -47,4 +49,18 @@ app.get("/", (req, res) => {
 
 // Start Server
 const PORT = 5000;
-app.listen(PORT, () => console.log(`Server running on port: ${PORT}`));
+app.listen(PORT, async () => {
+    console.log(`Server running on port: ${PORT}`);
+    try {
+        const health = await getTTSHealth();
+        const indic = health.indicf5;
+        const piper = health.piper;
+        console.log(
+            `[TTS] IndicF5 enabled=${indic.enabled} ready=${indic.ready}; Piper enabled=${piper.enabled} ready=${piper.ready}; Edge ready=${health.edge.ready}`
+        );
+        if (indic.error) console.log(`[TTS] IndicF5: ${indic.error}`);
+        if (piper.error) console.log(`[TTS] Piper: ${piper.error}`);
+    } catch (error) {
+        console.log(`[TTS] health check failed: ${error.message}`);
+    }
+});

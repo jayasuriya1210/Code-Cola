@@ -9,6 +9,7 @@ export default function SearchCase() {
     const [data, setData] = useState([]);
     const [optimizedQuery, setOptimizedQuery] = useState("");
     const [pdfModeInfo, setPdfModeInfo] = useState("");
+    const [provider, setProvider] = useState("");
     const [loading, setLoading] = useState(false);
 
     const search = async () => {
@@ -17,9 +18,14 @@ export default function SearchCase() {
       try {
         const res = await API.post("/scrape/search", { query });
         setOptimizedQuery(res.data.optimizedQuery || "");
+        setProvider(res.data.provider || "");
         setData(res.data.results || []);
         if (!res.data.pdfLinksGuaranteed) {
-          setPdfModeInfo("CourtListener API key is not configured, so some PDF links may be unavailable. Case links still work.");
+          if (!res.data.courtlistenerApiKeyConfigured) {
+            setPdfModeInfo("CourtListener API key is not configured, so some PDF links may be unavailable. Case links still work.");
+          } else {
+            setPdfModeInfo("API key is configured, but PDF links are unavailable for these particular results. Case links still work.");
+          }
         } else {
           setPdfModeInfo("");
         }
@@ -30,16 +36,20 @@ export default function SearchCase() {
       }
     };
 
-    const useCase = (item) => {
+    const startCaseWorkflow = (item) => {
       localStorage.setItem("caseId", String(item.caseId));
       localStorage.setItem("caseTitle", item.title || "");
       localStorage.setItem("casePdfUrl", item.pdf || "");
       localStorage.setItem("caseSourceUrl", item.link || "");
+      localStorage.removeItem("rawText");
+      localStorage.removeItem("summary");
+      localStorage.removeItem("summaryId");
+      localStorage.removeItem("audioURL");
       nav("/upload");
     };
 
     return (
-      <AppShell title="Search Cases" subtitle="Find case judgments from legal sources using AI-optimized query terms.">
+      <AppShell title="Search Case Files" subtitle="Search legal case files, open/download source documents, then run AI summary and audio workflow.">
         <div className="field">
           <label className="label">Case keyword</label>
           <div className="row">
@@ -56,6 +66,7 @@ export default function SearchCase() {
         </div>
 
         {optimizedQuery ? <p className="status info"><b>AI search terms:</b> {optimizedQuery}</p> : null}
+        {provider ? <p className="status info"><b>Scraper:</b> {provider}</p> : null}
         {pdfModeInfo ? <p className="status warn">{pdfModeInfo}</p> : null}
 
         <div className="list">
@@ -65,8 +76,8 @@ export default function SearchCase() {
               <p>{c.court || "Court not specified"} {c.dateFiled ? `| ${c.dateFiled}` : ""}</p>
               <div className="row">
                 {c.link ? <a href={c.link} target="_blank" rel="noreferrer">Open case page</a> : null}
-                {c.pdf ? <a href={c.pdf} target="_blank" rel="noreferrer">Open/Download PDF</a> : <span className="muted">PDF not available</span>}
-                <button className="btn btn-secondary" onClick={() => useCase(c)}>Use this case</button>
+                {c.pdf ? <a href={c.pdf} target="_blank" rel="noreferrer">Open or download PDF</a> : <span className="muted">PDF not available</span>}
+                <button className="btn btn-primary" onClick={() => startCaseWorkflow(c)}>Analyze this case PDF</button>
               </div>
             </article>
           ))}

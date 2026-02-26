@@ -10,8 +10,12 @@ exports.searchCases = async (req, res) => {
     }
 
     const aiQuery = await buildSearchTerms(query);
-    const scraped = await scrapeCases(aiQuery.optimized);
+    const scrapedPayload = await scrapeCases(aiQuery.optimized);
+    const scraped = Array.isArray(scrapedPayload) ? scrapedPayload : (scrapedPayload.results || []);
     const user_id = req.user.id;
+    const courtlistenerApiKeyConfigured = Boolean(
+      process.env.COURTLISTENER_API_KEY || process.env.COURTLISTENER_API_TOKEN
+    );
 
     const results = await Promise.all(
       scraped.slice(0, 25).map(async (item) => {
@@ -29,9 +33,10 @@ exports.searchCases = async (req, res) => {
     return res.json({
       query,
       optimizedQuery: aiQuery.optimized,
-      provider: "courtlistener",
+      provider: scrapedPayload.provider || "scraper",
+      courtlistenerApiKeyConfigured,
       pdfLinksGuaranteed: Boolean(
-        process.env.COURTLISTENER_API_KEY || process.env.COURTLISTENER_API_TOKEN
+        scrapedPayload.pdfLinksGuaranteed || results.some((item) => Boolean(item.pdf))
       ),
       results,
     });

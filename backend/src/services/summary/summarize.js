@@ -1,13 +1,65 @@
 const { callLLM } = require("../ai/llm");
 
-function pickChunk(text, start, end) {
-  const words = (text || "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
-  return words.slice(start, end).join(" ");
+function normalize(text) {
+  return String(text || "").replace(/\s+/g, " ").trim();
+}
+
+function splitSentences(text) {
+  return normalize(text)
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function clampText(text, maxChars) {
+  const clean = normalize(text);
+  if (clean.length <= maxChars) return clean;
+  const sliced = clean.slice(0, maxChars);
+  const lastSentence = Math.max(sliced.lastIndexOf("."), sliced.lastIndexOf("?"), sliced.lastIndexOf("!"));
+  if (lastSentence > 500) return sliced.slice(0, lastSentence + 1);
+  return sliced;
+}
+
+function uniqueSentences(sentences, maxCount = 6) {
+  const seen = new Set();
+  const out = [];
+  for (const line of sentences) {
+    const key = line.toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(line);
+    if (out.length >= maxCount) break;
+  }
+  return out;
+}
+
+function selectByKeywords(sentences, keywords, maxCount = 6) {
+  const subset = sentences.filter((line) => {
+    const lower = line.toLowerCase();
+    return keywords.some((key) => lower.includes(key));
+  });
+  return uniqueSentences(subset, maxCount);
+}
+
+function buildAnalysisInput(sourceText) {
+  const clean = normalize(sourceText);
+  if (!clean) return "";
+  if (clean.length <= 12000) return clean;
+
+  const sentences = splitSentences(clean);
+  const first = sentences.slice(0, 30);
+  const last = sentences.slice(-20);
+  const issues = selectByKeywords(sentences, ["issue", "whether", "question before", "challenge"], 10);
+  const arguments = selectByKeywords(sentences, ["argued", "submitted", "contended", "counsel", "petitioner", "respondent"], 12);
+  const reasoning = selectByKeywords(sentences, ["held", "observed", "reason", "finding", "analysis", "because"], 14);
+  const outcome = selectByKeywords(sentences, ["dismissed", "allowed", "upheld", "set aside", "acquitted", "convicted", "order"], 8);
+
+  const merged = uniqueSentences([...first, ...issues, ...arguments, ...reasoning, ...outcome, ...last], 110);
+  return clampText(merged.join(" "), 13000);
 }
 
 function fallbackSummary(text) {
-  const source = (text || "").replace(/\s+/g, " ").trim();
-
+  const source = normalize(text);
   if (!source) {
     return {
       background: "",
@@ -16,21 +68,27 @@ function fallbackSummary(text) {
       courtReasoning: "",
       judgmentOutcome: "",
       fullText: "",
+      audioText: "",
     };
   }
 
-  const background = pickChunk(source, 0, 120);
-  const legalIssues = pickChunk(source, 120, 230);
-  const arguments = pickChunk(source, 230, 360);
-  const courtReasoning = pickChunk(source, 360, 510);
-  const judgmentOutcome = pickChunk(source, 510, 620);
+  const sentences = splitSentences(source);
+  const background = uniqueSentences(sentences.slice(0, 12), 6).join(" ");
+  const legalIssues = selectByKeywords(sentences, ["issue", "whether", "question", "challenge"], 6).join(" ");
+  const arguments = selectByKeywords(sentences, ["argued", "submitted", "contended", "petitioner", "respondent"], 7).join(" ");
+  const courtReasoning = selectByKeywords(sentences, ["held", "observed", "reason", "finding", "analysis"], 7).join(" ");
+  const judgmentOutcome = selectByKeywords(
+    sentences,
+    ["dismissed", "allowed", "upheld", "set aside", "acquitted", "convicted", "order", "relief"],
+    5
+  ).join(" ");
 
-  const fullText = [
-    `Case background: ${background}`,
-    `Legal issues: ${legalIssues}`,
-    `Arguments: ${arguments}`,
-    `Court reasoning: ${courtReasoning}`,
-    `Judgment outcome: ${judgmentOutcome}`,
+  const audioText = [
+    `Case background: ${background || "Background extracted from judgment."}`,
+    `Legal issues: ${legalIssues || "Legal issues identified from case context."}`,
+    `Arguments: ${arguments || "Arguments inferred from petitioner and respondent statements."}`,
+    `Court reasoning: ${courtReasoning || "Court reasoning identified from key findings."}`,
+    `Judgment outcome: ${judgmentOutcome || "Final outcome identified from decision section."}`,
   ].join("\n\n");
 
   return {
@@ -39,54 +97,68 @@ function fallbackSummary(text) {
     arguments,
     courtReasoning,
     judgmentOutcome,
-    fullText,
+    fullText: source,
+    audioText,
+  };
+}
+
+function sanitizeSummary(parsed, sourceText, fallback) {
+  const background = String(parsed.background || "").trim() || fallback.background;
+  const legalIssues = String(parsed.legalIssues || "").trim() || fallback.legalIssues;
+  const argumentsText = String(parsed.arguments || "").trim() || fallback.arguments;
+  const courtReasoning = String(parsed.courtReasoning || "").trim() || fallback.courtReasoning;
+  const judgmentOutcome = String(parsed.judgmentOutcome || "").trim() || fallback.judgmentOutcome;
+
+  let audioText = String(parsed.fullText || "").trim();
+  if (!audioText) {
+    audioText = [
+      `Case background: ${background}`,
+      `Legal issues: ${legalIssues}`,
+      `Arguments: ${argumentsText}`,
+      `Court reasoning: ${courtReasoning}`,
+      `Judgment outcome: ${judgmentOutcome}`,
+    ]
+      .filter((line) => line.split(": ")[1])
+      .join("\n\n");
+  }
+
+  return {
+    background,
+    legalIssues,
+    arguments: argumentsText,
+    courtReasoning,
+    judgmentOutcome,
+    fullText: normalize(sourceText),
+    audioText: audioText || fallback.audioText,
   };
 }
 
 async function summarizeText(text) {
-  const fallback = fallbackSummary(text);
-  const cleanText = (text || "").replace(/\s+/g, " ").trim();
-  if (!cleanText) return fallback;
+  const sourceText = normalize(text);
+  const fallback = fallbackSummary(sourceText);
+  if (!sourceText) return fallback;
 
+  const analysisInput = buildAnalysisInput(sourceText);
   try {
     const content = await callLLM({
-      system:
-        "You summarize legal judgments into strict JSON with keys: background, legalIssues, arguments, courtReasoning, judgmentOutcome, fullText.",
-      user: `Summarize this legal judgment text:\n${cleanText.slice(0, 12000)}`,
+      system: [
+        "You are a legal analyst.",
+        "Return STRICT JSON with keys only: background, legalIssues, arguments, courtReasoning, judgmentOutcome, fullText.",
+        "Accuracy rules:",
+        "1) Do not invent facts.",
+        "2) Preserve legal meaning and outcome.",
+        "3) Mention both sides' arguments if present.",
+        "4) Keep each field concise and specific.",
+      ].join(" "),
+      user: `Summarize this legal judgment excerpt accurately:\n${analysisInput}`,
       responseFormat: "json",
-      maxTokens: 700,
+      maxTokens: 900,
     });
 
     if (!content) return fallback;
     const parsed = JSON.parse(content);
-    const background = String(parsed.background || "").trim();
-    const legalIssues = String(parsed.legalIssues || "").trim();
-    const argumentsText = String(parsed.arguments || "").trim();
-    const courtReasoning = String(parsed.courtReasoning || "").trim();
-    const judgmentOutcome = String(parsed.judgmentOutcome || "").trim();
-    let fullText = String(parsed.fullText || "").trim();
-
-    if (!fullText) {
-      fullText = [
-        `Case background: ${background}`,
-        `Legal issues: ${legalIssues}`,
-        `Arguments: ${argumentsText}`,
-        `Court reasoning: ${courtReasoning}`,
-        `Judgment outcome: ${judgmentOutcome}`,
-      ]
-        .filter((line) => line.split(": ")[1])
-        .join("\n\n");
-    }
-
-    return {
-      background,
-      legalIssues,
-      arguments: argumentsText,
-      courtReasoning,
-      judgmentOutcome,
-      fullText: fullText || fallback.fullText,
-    };
-  } catch (error) {
+    return sanitizeSummary(parsed, sourceText, fallback);
+  } catch (_error) {
     return fallback;
   }
 }
