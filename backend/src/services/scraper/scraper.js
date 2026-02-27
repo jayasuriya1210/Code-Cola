@@ -1,4 +1,5 @@
 const axios = require("axios");
+const cheerio = require("cheerio");
 
 function toAbsoluteCourtListenerUrl(url) {
   if (!url) return null;
@@ -78,159 +79,146 @@ async function scrapeCasesViaApi(query) {
   }
 }
 
-async function loadPlaywrightChromium() {
-  try {
-    const { chromium } = require("playwright");
-    return chromium;
-  } catch (_error) {
-    return null;
-  }
-}
-
-async function enrichPdfLinks(browser, items, timeoutMs, maxEnrichCount) {
-  const targets = items.filter((r) => !r.pdf && r.link).slice(0, maxEnrichCount);
+async function enrichPdfLinksViaCheerio(items, timeoutMs, maxEnrichCount) {
+  const targets = items.filter((r) => !r.pdf && r.link).slice(0, Math.max(0, maxEnrichCount));
   if (!targets.length) return;
 
   for (const item of targets) {
-    const page = await browser.newPage();
     try {
-      await page.goto(item.link, { waitUntil: "domcontentloaded", timeout: timeoutMs });
-      const pdf = await page.evaluate(() => {
-        const candidates = [
-          "a[href$='.pdf']",
-          "a[href*='/pdf/']",
-          "a[href*='download']",
-          "a[title*='PDF']",
-          "a[href*='/opinion/'][href*='.pdf']",
-        ];
-        for (const selector of candidates) {
-          const el = document.querySelector(selector);
-          if (el && el.href) return el.href;
-        }
-        return null;
+      const res = await axios.get(item.link, {
+        timeout: timeoutMs,
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
       });
-      if (pdf) item.pdf = toAbsoluteCourtListenerUrl(pdf);
+      const $ = cheerio.load(String(res.data || ""));
+      const candidates = [
+        "a[href$='.pdf']",
+        "a[href*='/pdf/']",
+        "a[href*='download']",
+        "a[title*='PDF']",
+        "a[href*='/opinion/'][href*='.pdf']",
+      ];
+      for (const selector of candidates) {
+        const href = $(selector).first().attr("href");
+        if (href) {
+          item.pdf = toAbsoluteCourtListenerUrl(href);
+          break;
+        }
+      }
     } catch (_error) {
       // ignore per-item failures
-    } finally {
-      await page.close();
     }
   }
 }
 
-async function scrapeCasesViaPlaywright(query) {
-  const chromium = await loadPlaywrightChromium();
-  if (!chromium) {
-    return {
-      provider: "playwright-unavailable",
-      pdfLinksGuaranteed: false,
-      results: [],
-    };
-  }
+function parseSearchResultsHtml(html, maxResults) {
+  const $ = cheerio.load(html);
+  const rows = [];
+  const seen = new Set();
 
-  const timeoutMs = Number(process.env.PLAYWRIGHT_TIMEOUT_MS || 18000);
-  const maxResults = Number(process.env.PLAYWRIGHT_MAX_RESULTS || 20);
-  const maxEnrichCount = Number(process.env.PLAYWRIGHT_ENRICH_PDF_COUNT || 6);
-  const headless = process.env.PLAYWRIGHT_HEADLESS !== "false";
+  $("article, .search-result, .result, li").each((_idx, node) => {
+    if (rows.length >= maxResults) return false;
 
-  const browser = await chromium.launch({ headless });
+    const card = $(node);
+    let anchor =
+      card.find("h2 a, h3 a, h4 a, a[href*='/opinion/'], a[href*='/case/']").first();
+
+    if (!anchor.length) {
+      anchor = card.find("a").first();
+    }
+
+    const href = (anchor.attr("href") || "").trim();
+    const absLink = toAbsoluteCourtListenerUrl(href);
+    if (!absLink || !/\/opinion\/\d+/i.test(absLink)) return;
+    if (seen.has(absLink)) return;
+
+    const title = (anchor.text() || "").replace(/\s+/g, " ").trim();
+    if (!title || /search case law/i.test(title)) return;
+
+    const rawText = (card.text() || "").replace(/\s+/g, " ").trim();
+    const dateMatch = rawText.match(/\b(19|20)\d{2}-\d{2}-\d{2}\b/);
+
+    const pdfHref = card
+      .find("a[href$='.pdf'], a[href*='/pdf/'], a[href*='download'], a[title*='PDF']")
+      .first()
+      .attr("href");
+
+    seen.add(absLink);
+    rows.push(normalizeCaseRow({
+      title: title || "Untitled Case",
+      link: absLink,
+      pdf: pdfHref ? toAbsoluteCourtListenerUrl(pdfHref) : null,
+      dateFiled: dateMatch ? dateMatch[0] : null,
+      court: rawText.slice(0, 160) || null,
+    }));
+    return undefined;
+  });
+
+  return rows;
+}
+
+async function scrapeCasesViaCheerio(query) {
+  const timeoutMs = Number(process.env.CHEERIO_TIMEOUT_MS || 10000);
+  const maxResults = Number(process.env.CHEERIO_MAX_RESULTS || 20);
+  const maxEnrichCount = Number(process.env.CHEERIO_ENRICH_PDF_COUNT || 5);
+
   try {
-    const page = await browser.newPage({
-      userAgent:
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    const searchUrl = `https://www.courtlistener.com/?q=${encodeURIComponent(query)}&type=o`;
+    const res = await axios.get(searchUrl, {
+      timeout: timeoutMs,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
     });
 
-    const searchUrl = `https://www.courtlistener.com/?q=${encodeURIComponent(query)}&type=o`;
-    await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: timeoutMs });
-    await page.waitForTimeout(900);
-
-    const results = await page.evaluate((limit) => {
-      const cards = Array.from(document.querySelectorAll("article, .search-result, .result, li")).slice(0, 220);
-      const rows = [];
-
-      for (const card of cards) {
-        const anchor =
-          card.querySelector("h2 a, h3 a, h4 a, a[href*='/opinion/'], a[href*='/case/']") ||
-          card.querySelector("a");
-        if (!anchor || !anchor.href) continue;
-
-        const href = anchor.href || "";
-        if (!/\/opinion\/\d+/i.test(href)) continue;
-
-        const title = (anchor.textContent || "").trim();
-        if (!title || /search case law/i.test(title)) continue;
-        const rawText = (card.textContent || "").replace(/\s+/g, " ").trim();
-        const dateMatch = rawText.match(/\b(19|20)\d{2}-\d{2}-\d{2}\b/);
-        const pdfAnchor =
-          card.querySelector("a[href$='.pdf'], a[href*='/pdf/'], a[href*='download'], a[title*='PDF']") || null;
-
-        rows.push({
-          title: title || "Untitled Case",
-          link: href,
-          pdf: pdfAnchor ? pdfAnchor.href : null,
-          dateFiled: dateMatch ? dateMatch[0] : null,
-          court: rawText.slice(0, 160) || null,
-        });
-        if (rows.length >= limit) break;
-      }
-
-      return rows;
-    }, maxResults);
-
-    const normalized = results
-      .map(normalizeCaseRow)
-      .filter((r) => r.link && /\/opinion\/\d+/i.test(r.link));
-    const deduped = [];
-    const seen = new Set();
-    for (const row of normalized) {
-      if (seen.has(row.link)) continue;
-      seen.add(row.link);
-      deduped.push(row);
-    }
-    await enrichPdfLinks(browser, deduped, timeoutMs, maxEnrichCount);
+    const parsed = parseSearchResultsHtml(String(res.data || ""), maxResults);
+    await enrichPdfLinksViaCheerio(parsed, timeoutMs, maxEnrichCount);
 
     return {
-      provider: "playwright-courtlistener",
-      pdfLinksGuaranteed: deduped.some((r) => Boolean(r.pdf)),
-      results: deduped,
+      provider: "cheerio-courtlistener",
+      pdfLinksGuaranteed: parsed.some((r) => Boolean(r.pdf)),
+      results: parsed,
     };
   } catch (error) {
     return {
-      provider: `playwright-error:${error.name || "error"}`,
+      provider: `cheerio-error:${error.name || "error"}`,
       pdfLinksGuaranteed: false,
       results: [],
     };
-  } finally {
-    await browser.close();
   }
 }
 
 async function scrapeCases(query) {
-  const provider = String(process.env.SCRAPER_PROVIDER || "playwright").toLowerCase();
-  const allowApiFallback = String(process.env.SCRAPER_ALLOW_API_FALLBACK || "false").toLowerCase() === "true";
+  const provider = String(process.env.SCRAPER_PROVIDER || "cheerio").toLowerCase();
+  const allowApiFallback = String(process.env.SCRAPER_ALLOW_API_FALLBACK || "true").toLowerCase() === "true";
 
   if (provider === "api") {
     return scrapeCasesViaApi(query);
   }
 
-  const playwrightResult = await scrapeCasesViaPlaywright(query);
-  if (playwrightResult.results.length) {
-    return playwrightResult;
+  const cheerioResult = await scrapeCasesViaCheerio(query);
+  if (cheerioResult.results.length) {
+    return cheerioResult;
   }
 
-  // Always recover with API fallback when Playwright runtime is unavailable or fails.
-  if (String(playwrightResult.provider || "").startsWith("playwright-")) {
+  // Always recover with API fallback when HTML scraping returns no results.
+  if (String(cheerioResult.provider || "").startsWith("cheerio-")) {
     const apiResult = await scrapeCasesViaApi(query);
     return {
       ...apiResult,
-      provider: `${playwrightResult.provider}->${apiResult.provider}`,
+      provider: `${cheerioResult.provider}->${apiResult.provider}`,
     };
   }
 
   if (!allowApiFallback) {
     return {
-      provider: playwrightResult.provider,
-      pdfLinksGuaranteed: playwrightResult.pdfLinksGuaranteed,
+      provider: cheerioResult.provider,
+      pdfLinksGuaranteed: cheerioResult.pdfLinksGuaranteed,
       results: [],
     };
   }
@@ -238,7 +226,7 @@ async function scrapeCases(query) {
   const apiResult = await scrapeCasesViaApi(query);
   return {
     ...apiResult,
-    provider: `${playwrightResult.provider}->${apiResult.provider}`,
+    provider: `${cheerioResult.provider}->${apiResult.provider}`,
   };
 }
 
