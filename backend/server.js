@@ -11,9 +11,7 @@ const app = express();
 
 // Middleware
 app.use(cors({
-    origin: "http://localhost:5173",
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"]
+    origin: "*"
 }));
 
 app.use(express.json());
@@ -53,12 +51,10 @@ app.listen(PORT, async () => {
     console.log(`Server running on port: ${PORT}`);
     try {
         const health = await getTTSHealth();
-        const indic = health.indicf5;
         const piper = health.piper;
         console.log(
-            `[TTS] IndicF5 enabled=${indic.enabled} ready=${indic.ready}; Piper enabled=${piper.enabled} ready=${piper.ready}; Edge ready=${health.edge.ready}`
+            `[TTS] Piper enabled=${piper.enabled} ready=${piper.ready}; Edge ready=${health.edge.ready}`
         );
-        if (indic.error) console.log(`[TTS] IndicF5: ${indic.error}`);
         if (piper.error) console.log(`[TTS] Piper: ${piper.error}`);
     } catch (error) {
         console.log(`[TTS] health check failed: ${error.message}`);

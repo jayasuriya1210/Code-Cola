@@ -4,39 +4,68 @@ const History = require("../models/historyModel");
 const Case = require("../models/caseModel");
 const axios = require("axios");
 
+function countWords(text) {
+  return String(text || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+}
+
 exports.textToAudio = async (req, res) => {
   try {
-    const { text, lang, case_id, summary_id, case_title } = req.body;
-    const caseId = Number(case_id);
+    const { text, lang, case_id, summary_id, case_title, source_url, pdf_url } = req.body;
+    const parsedCaseId = Number(case_id);
     if (!text || !text.trim()) {
       return res.status(400).json({ msg: "text is required" });
     }
-    if (!caseId) {
-      return res.status(400).json({ msg: "case_id is required" });
-    }
 
-    const caseRecord = await Case.findById(caseId, req.user.id);
+    let resolvedCaseId = Number.isFinite(parsedCaseId) && parsedCaseId > 0 ? parsedCaseId : null;
+    let caseRecord = resolvedCaseId ? await Case.findById(resolvedCaseId, req.user.id) : null;
+
     if (!caseRecord) {
-      return res.status(404).json({ msg: "Case not found" });
+      resolvedCaseId = await Case.createFromSearch({
+        user_id: req.user.id,
+        title: case_title || "Untitled case",
+        source_url: source_url || null,
+        pdf_url: pdf_url || null,
+      });
+      caseRecord = await Case.findById(resolvedCaseId, req.user.id);
     }
 
-    const tts = await generateTTS(text, lang);
+    if (!caseRecord || !resolvedCaseId) {
+      return res.status(500).json({ msg: "Unable to resolve case for audio generation" });
+    }
+
+    const requestText = String(text || "").trim();
+    const extractedText = String(caseRecord?.extracted_text || "").trim();
+    const sourceWordCount = countWords(extractedText || requestText);
+    const requestWordCount = countWords(requestText);
+
+    // If request text is much shorter than the PDF content, synthesize from extracted PDF text.
+    const shouldUseExtracted =
+      extractedText &&
+      sourceWordCount >= 300 &&
+      requestWordCount < Math.max(220, Math.floor(sourceWordCount * 0.35));
+
+    const textForTTS = shouldUseExtracted ? extractedText : requestText;
+
+    const tts = await generateTTS(textForTTS, { sourceWordCount });
     const audioURL = tts.audioURL;
     const audioURLs = tts.audioURLs;
     const ttsProvider = tts.provider || "unknown";
     const language = lang || "en";
     const audioId = await Audio.save({
       user_id: req.user.id,
-      case_id: caseId,
+      case_id: resolvedCaseId,
       summary_id: summary_id ? Number(summary_id) : null,
       language,
       audio_url: audioURL,
       audio_urls: audioURLs,
     });
 
-    await History.add(req.user.id, caseId, case_title || caseRecord.title || "Untitled case", language);
+    await History.add(req.user.id, resolvedCaseId, case_title || caseRecord.title || "Untitled case", language);
 
-    return res.json({ audioId, audioURL, audioURLs, ttsProvider, language });
+    return res.json({ audioId, caseId: resolvedCaseId, audioURL, audioURLs, ttsProvider, language });
   } catch (error) {
     return res.status(500).json({ msg: error.message || "Audio generation failed" });
   }
@@ -77,8 +106,7 @@ exports.health = async (_req, res) => {
   try {
     const health = await getTTSHealth();
     const ok = Boolean(
-      (health.indicf5.enabled && health.indicf5.ready)
-      || (health.piper.enabled && health.piper.ready)
+      (health.piper.enabled && health.piper.ready)
       || health.edge.ready
     );
     return res.status(ok ? 200 : 503).json(health);
