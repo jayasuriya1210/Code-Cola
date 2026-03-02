@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment files
+.env
+.env.*
+!.env.example
+backend/.env
+
+# Python virtual environments
+.venv/
+.venv-*/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Build artifacts
+dist/
+
+# Local databases
+*.db
+backend/database.db
+
+# Uploaded/generated files
+backend/audio/
+backend/uploads/
+backend/notes/pdf/
+uploads/
+*.wav
+tts_*.wav
+
+# Local archives/models
+frontend-old-archive/
+Code-Cola-dev2_piper/
